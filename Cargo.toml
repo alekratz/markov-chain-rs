@@ -1,0 +1,24 @@
+[package]
+name = "markov-chain"
+version = "0.1.0"
+authors = ["Alek Ratzloff <alekratz@gmail.com>"]
+description = "A generic markov chain library."
+license = "ISC"
+
+[dependencies]
+serde = "1.0"
+serde_derive = "1.0"
+maplit = "0.1.4"
+rand = "0.3"
+
+# Serialization features
+serde_cbor = { version = "0.6.0", optional = true }
+# serde_yaml = { version = "0.7.0", optional = true }
+
+# Generator features
+clap = { version = "2.24", optional = true }
+lazy_static = { version = "0.2", optional = true }
+
+[features]
+default = ["serde_cbor"]
+generator = ["clap", "lazy_static", "default"]
