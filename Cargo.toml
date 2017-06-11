@@ -1,6 +1,6 @@
 [package]
 name = "markov-chain"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Alek Ratzloff <alekratz@gmail.com>"]
 description = "A generic markov chain library."
 license = "ISC"
