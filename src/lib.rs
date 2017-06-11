@@ -10,11 +10,16 @@ extern crate serde_yaml;
 #[macro_use]
 extern crate maplit;
 extern crate rand;
+extern crate regex;
+
+#[macro_use]
+extern crate lazy_static;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use rand::distributions::{Weighted, WeightedChoice, IndependentSample};
 use rand::Rng;
+use regex::Regex;
 use std::collections::HashMap;
 use std::hash::Hash;
 
@@ -63,22 +68,22 @@ impl<T> Chain<T> where T: Clone + Chainable {
             string.push(None);
         }
 
-        /*self.update_link(vec!(None; order), string[0].clone());*/
+        let mut window = vec!(None; order);
+        self.update_link(&window, &string[0]);
 
-        let mut index = 0;
-        let mut end = self.order;
-        while end < string.len() {
-            let ref window = string[index .. index + self.order];
-            let next = string[end].clone();
+        let mut end = 0;
+        while end < string.len() - 1 {
+            window.remove(0);
+            let next = &string[end + 1];
+            window.push(string[end].clone());
 
-            self.update_link(&Vec::from(window), &next);
+            self.update_link(&window, &next);
 
-            index += 1;
             end += 1;
         }
-
-        let ref window = string[index .. end];
-        self.update_link(&Vec::from(window), &None);
+        window.remove(0);
+        window.push(string[end].clone());
+        self.update_link(&window, &None);
         self
     }
 
@@ -235,17 +240,36 @@ impl<T> Chain<T> where T: Clone + Chainable + Serialize + DeserializeOwned {
     }
 }
 */
-
+lazy_static! { 
+    /// Symbol combinations to break sentences on.
+    static ref BREAK: [&'static str; 7] = [".", "?", "!", ".\"", "!\"", "?\"", ",\""];
+}
 /// String-specific implementation of the chain. Contains some special string-
 /// specific functions.
 impl Chain<String> {
     /// Trains this chain on a single string. Strings are broken into words,
-    /// which are split by whitespace.
+    /// which are split by whitespace and punctuation.
     pub fn train_string(&mut self, sentence: &str) -> &mut Self {
-        let parts = sentence.split_whitespace()
-            .map(str::to_string)
-            .collect::<Vec<_>>();
-        self.train(parts);
+        lazy_static! {
+            static ref RE: Regex = Regex::new(
+                r#"[^ .!?,\-\n\r\t]+|[.,!?\-"]+"#
+                ).unwrap();
+        };
+        let parts = {
+            let mut parts = Vec::new();
+            let mut words = Vec::new();
+            for mat in RE.find_iter(sentence).map(|m| m.as_str()) {
+                words.push(String::from(mat));
+                if BREAK.contains(&mat) {
+                    parts.push(words.clone());
+                    words.clear();
+                }
+            }
+            parts
+        };
+        for string in parts {
+            self.train(string);
+        }
         self
     }
 
@@ -256,31 +280,8 @@ impl Chain<String> {
             return String::new();
         }
 
-        let mut curs = {
-            let c;
-            loop {
-                if let Some(n) = self.choose_random_node() {
-                    c = n.clone();
-                    break;
-                }
-            }
-            c
-        };
-
-        // this takes care of an instance where we have order N and have chosen a node that is
-        // shorter than our order.
-        if curs.iter().find(|x| x.is_none()).is_some() {
-            return curs.iter()
-                .cloned()
-                .filter_map(|x| x)
-                .collect();
-        }
-
-        let mut result = curs.clone()
-            .into_iter()
-            .map(|x| x.unwrap())
-            .collect::<Vec<_>>();
-
+        let mut curs = vec!(None; self.order);
+        let mut result = Vec::new();
         loop {
             // Choose the next item
             let next = self.choose_random_link(&curs);
@@ -288,7 +289,7 @@ impl Chain<String> {
                 result.push(next.clone());
                 curs.push(Some(next.clone()));
                 curs.remove(0);
-                if next.ends_with(".") || next.ends_with("!") || next.ends_with("?") {
+                if BREAK.contains(&next.as_str()) {
                     break;
                 }
             }
@@ -296,7 +297,10 @@ impl Chain<String> {
                 break;
             }
         }
-        result.join(" ")
+        let mut result = result.into_iter()
+            .fold(String::new(), |a, b| if BREAK.contains(&b.as_str()) || b == "," { a + b.as_str() } else { a + " " + b.as_str() });
+        result.remove(0); // get rid of the leading space character
+        result
     }
 
     pub fn generate_paragraph(&self, sentences: usize) -> String {

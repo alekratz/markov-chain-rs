@@ -153,7 +153,7 @@ mod deps {
     }
 
     pub fn generate(order: usize, paragraphs: usize, sentences: usize, input_files: Vec<&str>) {
-        let mut chain = Chain::<String>::new(1);
+        let mut chain = Chain::<String>::new(order);
         for input in input_files {
             let contents = match read_file(input) {
                 Ok(c) => c,
@@ -193,12 +193,71 @@ mod deps {
                 };
             }
 
-            let mut pgs = Vec::new();
-            // generate paragraphs
-            for _ in 0 .. paragraphs {
-                pgs.push(chain.generate_paragraph(sentences));
+        }
+        let mut pgs = Vec::new();
+        // generate paragraphs
+        for _ in 0 .. paragraphs {
+            pgs.push(chain.generate_paragraph(sentences));
+        }
+        println!("{}", pgs.join("\n\n"));
+    }
+
+    pub fn merge(order: usize, input_files: Vec<&str>, output_file: &str) {
+        let mut chain = Chain::<String>::new(order);
+        if let Some(extension) = Path::new(output_file).extension().map(|x| x.to_str().unwrap()) {
+            if !is_valid_extension(extension) {
+                exit_err!("no known strategy to write file `{}`. Known extensions: {}",
+                          output_file,
+                          FILE_EXTENSIONS.iter().map(|&(a,_)| a).collect::<Vec<&str>>().join(" "));
             }
-            println!("{}", pgs.join("\n\n"));
+        }
+        for input in input_files {
+            let contents = match read_file(input) {
+                Ok(c) => c,
+                Err(e) => exit_err!("could not read {}: {}", input, e),
+            };
+
+            // train the chain based on the extension
+            if let Some(extension) = Path::new(input).extension().map(|x| x.to_str().unwrap()) {
+                if is_valid_extension(extension) {
+                    match extension {
+                        "cbor" => match Chain::<String>::from_cbor(&contents) {
+                            Ok(c) => if c.order() != order {
+                                exit_err!("could not load chain file {0}: {0} has an order of {1}, while {2} is specified",
+                                          input, c.order(), order);
+                            }
+                            else {
+                                chain.merge(&c);
+                            },
+                            Err(e) => exit_err!("could not parse cbor file {}: {}", input, e),
+                        },
+                        _ => unreachable!(),
+                    }
+                }
+                else {
+                    // TODO : DRY generate(1)
+                    match String::from_utf8(contents) {
+                        Ok(contents) => chain.train_string(&contents),
+                        Err(e) => exit_err!("error reading {} as plaintext: {}", input, e),
+                    };
+                }
+            }
+            else {
+                // TODO : DRY generate(1)
+                match String::from_utf8(contents) {
+                    Ok(contents) => chain.train_string(&contents),
+                    Err(e) => exit_err!("error reading {} as plaintext: {}", input, e),
+                };
+            }
+        }
+        
+        let write_bytes = match Path::new(output_file).extension().map(|x| x.to_str().unwrap()).unwrap() {
+            "cbor" => chain.to_cbor().unwrap(),
+            _ => unreachable!(),
+        };
+
+        if let Err(e) = write_file(output_file, &write_bytes) {
+            exit_err!("could not write file {}: {}", output_file, e);
         }
     }
 
@@ -223,7 +282,7 @@ fn main() {
         (@subcommand train =>
             (about: "Trains a new markov chain, or updates an existing markov chain from a file.")
             (@arg INPUT: +required +multiple "Sets the input training data to use")
-            (@arg UPDATE: -u --update +required +takes_value +multiple "Sets the list of files to update or create")
+            (@arg OUTPUT: -o --output +required +takes_value +multiple "Sets the list of files to update or create")
             (@arg ORDER: -r --order +takes_value "Sets the order of the markov chain")
         )
         (@subcommand generate =>
@@ -231,6 +290,13 @@ fn main() {
             (@arg INPUT: +required +multiple "Sets the input training data or markov chain file to use")
             (@arg PARAGRAPHS: -p --paragraphs +takes_value "The number of paragraphs to generate")
             (@arg SENTENCES: -s --sentences +takes_value "The number of sentences to generate per paragraph")
+            (@arg ORDER: -r --order +takes_value "Sets the order of the markov chain")
+        )
+        (@subcommand merge =>
+            (about: "Merges many markov chain files together into one file.")
+            (@arg INPUT: +required +multiple "Sets the input training data or markov chain file to use")
+            (@arg OUTPUT: -o --out +required +takes_value "Sets the file where the final merged markov chain is saved.")
+            (@arg ORDER: -r --order +takes_value "Sets the order of the markov chain")
         )
     );
     
@@ -250,7 +316,7 @@ fn main() {
                 exit_err("order must be at least 1");
             }
             
-            let update_files = matches.values_of("UPDATE")
+            let update_files = matches.values_of("OUTPUT")
                 .map(|x| x.collect())
                 .unwrap_or(vec![]);
             let input_files = matches.values_of("INPUT")
@@ -285,6 +351,21 @@ fn main() {
                 .unwrap()
                 .collect();
             generate(order, paragraphs, sentences, input_files);
+        },
+        Some("merge") => {
+            let matches = matches.subcommand_matches("merge").unwrap();
+            let order = match matches.value_of("ORDER")
+                .map(|x| x.parse::<usize>())
+                .unwrap_or(Ok(1)) {
+                    Ok(n) => n,
+                    Err(e) => exit_err(format!("invalid number for order: {}", e)),
+                };
+            let input_files = matches.values_of("INPUT")
+                .unwrap()
+                .collect();
+            let output_file = matches.value_of("OUTPUT")
+                .unwrap();
+            merge(order, input_files, output_file);
         }
         Some(command) => {
             helper.print_help().unwrap();
