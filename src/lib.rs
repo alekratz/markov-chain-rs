@@ -10,8 +10,6 @@ extern crate regex;
 #[macro_use]
 extern crate lazy_static;
 
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use rand::distributions::{Weighted, WeightedChoice, IndependentSample};
 use rand::Rng;
 use regex::Regex;

@@ -12,5 +12,8 @@ A markov chain library for Rust.
 * Iterator for getting random items one-at-a-time
 * Infinite chain generation
 
+# Examples
+
+
 # License
 ISC, see [COPYING](COPYING) for details.

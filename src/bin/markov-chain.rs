@@ -14,6 +14,9 @@ mod prelude {
             if cfg!(feature = "serde_cbor") {
                 extensions.push(("cbor", "CBOR, Concise Binary Object Representation"));
             }
+            if cfg!(feature = "serde_yaml") {
+                extensions.push(("yaml", "YAML"));
+            }
             extensions
         };
 
@@ -40,6 +43,10 @@ These are the file formats and extensions supported:
         use std::result;
         use std::io::{self, Read, Write};
         use std::fs::{File, OpenOptions};
+        #[cfg(feature = "serde_cbor")]
+        use cbor;
+        #[cfg(feature = "serde_yaml")]
+        use yaml;
 
         pub fn read_file(path: &str) -> io::Result<Vec<u8>> {
             let mut file = File::open(path)?;
@@ -94,30 +101,50 @@ These are the file formats and extensions supported:
             #[cfg(feature = "serde_cbor")]
             pub fn to_cbor<T>(chain: &Chain<T>) -> Result<Vec<u8>>
                 where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
-                use cbor;
                 cbor::to_vec(chain).map_err(|e| e.to_string())
+            }
+            
+            #[cfg(not(feature = "serde_cbor"))]
+            pub fn to_cbor<T>(_: &Chain<T>) -> Result<Vec<u8>>
+                where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+                Err("cbor format is not supported".to_string())
             }
 
             #[cfg(feature = "serde_cbor")]
             pub fn from_cbor<T>(slice: &[u8]) -> Result<Chain<T>>
                 where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
-                use cbor;
                 cbor::from_slice(slice).map_err(|e| e.to_string())
+            }
+
+            #[cfg(not(feature = "serde_cbor"))]
+            pub fn from_cbor<T>(_: &[u8]) -> Result<Chain<T>>
+                where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+                Err("cbor format is not supported".to_string())
             }
 
             #[cfg(feature = "serde_yaml")]
             pub fn to_yaml<T>(chain: &Chain<T>) -> Result<Vec<u8>>
                 where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
-                use yaml;
                 yaml::to_string(chain).map(|c| c.into_bytes()).map_err(|e| e.to_string())
+            }
+
+            #[cfg(not(feature = "serde_yaml"))]
+            pub fn to_yaml<T>(_: &Chain<T>) -> Result<Vec<u8>>
+                where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+                Err("yaml format is not supported".to_string())
             }
 
             #[cfg(feature = "serde_yaml")]
             pub fn from_yaml<T>(slice: &[u8]) -> Result<Chain<T>>
                 where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
                 use std::str;
-                use yaml;
                 yaml::from_str(str::from_utf8(slice).unwrap()).map_err(|e| e.to_string())
+            } 
+
+            #[cfg(not(feature = "serde_yaml"))]
+            pub fn from_yaml<T>(_: &[u8]) -> Result<Chain<T>>
+                where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+                Err("yaml format is not supported".to_string())
             } 
         }
 
@@ -242,10 +269,6 @@ These are the file formats and extensions supported:
     }
 
     pub fn merge(order: usize, input_files: Vec<&str>, output_file: &str) {
-        if SerdeStrategy::from_path(output_file).is_none() {
-            exit_err!("unknown strategy for writing {}", output_file);
-        }
-
         let mut chain = Chain::<String>::new(order);
         for input in input_files {
             if SerdeStrategy::from_path(input).is_some() {
