@@ -71,43 +71,65 @@ impl<T> Chain<T> where T: Clone + Chainable {
             let ref window = string[index .. index + self.order];
             let next = string[end].clone();
 
-            self.update_link(Vec::from(window), next);
+            self.update_link(&Vec::from(window), &next);
 
             index += 1;
             end += 1;
         }
 
         let ref window = string[index .. end];
-        self.update_link(Vec::from(window), None);
+        self.update_link(&Vec::from(window), &None);
+        self
+    }
 
+    /// Merges this markov chain with another.
+    pub fn merge(&mut self, other: &Self) -> &mut Self {
+        assert_eq!(self.order, other.order, "orders must be equal in order to merge markov chains");
+        if self.chain.is_empty() {
+            self.chain = other.chain.clone();
+            return self;
+        }
+
+        for (node, link) in &other.chain {
+            for (ref next, &weight) in link.iter() {
+                self.update_link_weight(node, next, weight);
+            }
+        }
         self
     }
 
     /// Increments a link from a node by one, or adding it with a weight of 1
     /// if it doesn't exist.
-    fn update_link(&mut self, node: Node<T>, next: Option<T>) {
-        if self.chain.contains_key(&node) {
+    fn update_link(&mut self, node: &[Option<T>], next: &Option<T>) {
+        self.update_link_weight(node, next, 1);
+    }
+
+    /// Increments a link from a node by specified value, or adding it with a
+    /// weight of the specified value if it doesn't exist.
+    fn update_link_weight(&mut self, node: &[Option<T>], next: &Option<T>, weight: u32) {
+        if self.chain.contains_key(node) {
             let links = self.chain
-                .get_mut(&node)
+                .get_mut(node)
                 .unwrap();
             // Update the link
-            if links.contains_key(&next) {
-                let weight = links.get(&next).unwrap() + 1;
-                links.insert(next, weight);
+            if links.contains_key(next) {
+                let weight = *links.get(next).unwrap() + weight;
+                links.insert(next.clone(), weight);
             }
             // Insert a new link
             else {
-                links.insert(next, 1);
+                links.insert(next.clone(), weight);
             }
         }
         else {
-            self.chain.insert(node, hashmap!{next => 1});
+            self.chain.insert(Vec::from(node), hashmap!{next.clone() => weight});
         }
     }
 
     /// Generates a string of items with no maximum limit.
     /// This is equivalent to `generate_limit(-1)`.
     pub fn generate(&self) -> Vec<T> {
+        // TODO : DRY generate_sentence(1)
         self.generate_limit(-1)
     }
 
@@ -217,13 +239,72 @@ impl<T> Chain<T> where T: Clone + Chainable + Serialize + DeserializeOwned {
 /// String-specific implementation of the chain. Contains some special string-
 /// specific functions.
 impl Chain<String> {
-    /// Trains this chain on a single string. Strings are broken into sentences,
-    /// which are delimited by common punctuation. (. ! ?)
+    /// Trains this chain on a single string. Strings are broken into words,
+    /// which are split by whitespace.
     pub fn train_string(&mut self, sentence: &str) -> &mut Self {
         let parts = sentence.split_whitespace()
             .map(str::to_string)
-            .collect();
-        self.train(parts)
+            .collect::<Vec<_>>();
+        self.train(parts);
+        self
+    }
+
+    pub fn generate_sentence(&self) -> String {
+        // TODO : DRY generate_sentence(1)
+        // consider an iterator?
+        if self.chain.is_empty() {
+            return String::new();
+        }
+
+        let mut curs = {
+            let c;
+            loop {
+                if let Some(n) = self.choose_random_node() {
+                    c = n.clone();
+                    break;
+                }
+            }
+            c
+        };
+
+        // this takes care of an instance where we have order N and have chosen a node that is
+        // shorter than our order.
+        if curs.iter().find(|x| x.is_none()).is_some() {
+            return curs.iter()
+                .cloned()
+                .filter_map(|x| x)
+                .collect();
+        }
+
+        let mut result = curs.clone()
+            .into_iter()
+            .map(|x| x.unwrap())
+            .collect::<Vec<_>>();
+
+        loop {
+            // Choose the next item
+            let next = self.choose_random_link(&curs);
+            if let Some(next) = next {
+                result.push(next.clone());
+                curs.push(Some(next.clone()));
+                curs.remove(0);
+                if next.ends_with(".") || next.ends_with("!") || next.ends_with("?") {
+                    break;
+                }
+            }
+            else {
+                break;
+            }
+        }
+        result.join(" ")
+    }
+
+    pub fn generate_paragraph(&self, sentences: usize) -> String {
+        let mut paragraph = Vec::new();
+        for _ in 0 .. sentences {
+            paragraph.push(self.generate_sentence());
+        }
+        paragraph.join(" ")
     }
 }
 

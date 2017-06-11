@@ -152,6 +152,56 @@ mod deps {
         }
     }
 
+    pub fn generate(order: usize, paragraphs: usize, sentences: usize, input_files: Vec<&str>) {
+        let mut chain = Chain::<String>::new(1);
+        for input in input_files {
+            let contents = match read_file(input) {
+                Ok(c) => c,
+                Err(e) => exit_err!("could not read {}: {}", input, e),
+            };
+
+            // train the chain based on the extension
+            if let Some(extension) = Path::new(input).extension().map(|x| x.to_str().unwrap()) {
+                if is_valid_extension(extension) {
+                    match extension {
+                        "cbor" => match Chain::<String>::from_cbor(&contents) {
+                            Ok(c) => if c.order() != order {
+                                exit_err!("could not load chain file {0}: {0} has an order of {1}, while {2} is specified",
+                                          input, c.order(), order);
+                            }
+                            else {
+                                chain.merge(&c);
+                            },
+                            Err(e) => exit_err!("could not parse cbor file {}: {}", input, e),
+                        },
+                        _ => unreachable!(),
+                    }
+                }
+                else {
+                    // TODO : DRY generate(1)
+                    match String::from_utf8(contents) {
+                        Ok(contents) => chain.train_string(&contents),
+                        Err(e) => exit_err!("error reading {} as plaintext: {}", input, e),
+                    };
+                }
+            }
+            else {
+                    // TODO : DRY generate(1)
+                match String::from_utf8(contents) {
+                    Ok(contents) => chain.train_string(&contents),
+                    Err(e) => exit_err!("error reading {} as plaintext: {}", input, e),
+                };
+            }
+
+            let mut pgs = Vec::new();
+            // generate paragraphs
+            for _ in 0 .. paragraphs {
+                pgs.push(chain.generate_paragraph(sentences));
+            }
+            println!("{}", pgs.join("\n\n"));
+        }
+    }
+
     pub fn exit_err<T: Display>(msg: T) -> ! {
         let mut stderr = io::stderr();
         writeln!(stderr, "Error: {}", msg).unwrap();
@@ -169,12 +219,18 @@ fn main() {
         (version: crate_version!())
         (author: crate_authors!())
         (about: "A markov chain generator.")
+        (after_help: AVAILABLE_FORMATS.as_str())
         (@subcommand train =>
             (about: "Trains a new markov chain, or updates an existing markov chain from a file.")
-            (after_help: AVAILABLE_FORMATS.as_str())
             (@arg INPUT: +required +multiple "Sets the input training data to use")
             (@arg UPDATE: -u --update +required +takes_value +multiple "Sets the list of files to update or create")
             (@arg ORDER: -r --order +takes_value "Sets the order of the markov chain")
+        )
+        (@subcommand generate =>
+            (about: "Generates a string of text based on a file, or a saved markov chain in a supported format.")
+            (@arg INPUT: +required +multiple "Sets the input training data or markov chain file to use")
+            (@arg PARAGRAPHS: -p --paragraphs +takes_value "The number of paragraphs to generate")
+            (@arg SENTENCES: -s --sentences +takes_value "The number of sentences to generate per paragraph")
         )
     );
     
@@ -202,6 +258,34 @@ fn main() {
                 .collect();
             train(order, update_files, input_files);
         },
+        Some("generate") => {
+            let matches = matches.subcommand_matches("generate").unwrap();
+            let order = match matches.value_of("ORDER")
+                .map(|x| x.parse::<usize>())
+                .unwrap_or(Ok(1)) {
+                    Ok(n) => n,
+                    Err(e) => exit_err(format!("invalid number for order: {}", e)),
+                };
+            if order == 0 {
+                exit_err("order must be at least 1");
+            }
+            let paragraphs = match matches.value_of("PARAGRAPHS")
+                .map(|x| x.parse::<usize>())
+                .unwrap_or(Ok(1)) {
+                    Ok(n) => n,
+                    Err(e) => exit_err(format!("invalid number for paragraphs: {}", e)),
+                };
+            let sentences = match matches.value_of("SENTENCES")
+                .map(|x| x.parse::<usize>())
+                .unwrap_or(Ok(3)) {
+                    Ok(n) => n,
+                    Err(e) => exit_err(format!("invalid number for sentences: {}", e)),
+                };
+            let input_files = matches.values_of("INPUT")
+                .unwrap()
+                .collect();
+            generate(order, paragraphs, sentences, input_files);
+        }
         Some(command) => {
             helper.print_help().unwrap();
             println!();
