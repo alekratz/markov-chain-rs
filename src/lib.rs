@@ -2,11 +2,6 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-#[cfg(feature = "serde_cbor")]
-extern crate serde_cbor;
-#[cfg(feature = "serde_yaml")]
-extern crate serde_yaml;
-
 #[macro_use]
 extern crate maplit;
 extern crate rand;
@@ -239,29 +234,6 @@ impl<T> Chain<T> where T: Clone + Chainable {
             self.chain.keys()
                 .nth(rng.gen_range(0, self.chain.len()))
         }
-    }
-}
-
-#[cfg(feature = "serde_cbor")]
-impl<T> Chain<T> where T: Clone + Chainable + Serialize + DeserializeOwned {
-    pub fn from_cbor(slice: &[u8]) -> serde_cbor::Result<Self> {
-        serde_cbor::from_slice(slice)
-    }
-
-    pub fn to_cbor(&self) -> serde_cbor::Result<Vec<u8>> {
-        serde_cbor::to_vec(self)
-    }
-}
-
-// YAML is broken https://github.com/chyh1990/yaml-rust/issues/70
-#[cfg(feature = "serde_yaml")]
-impl<T> Chain<T> where T: Clone + Chainable + Serialize + DeserializeOwned {
-    pub fn from_yaml(s: &str) -> serde_yaml::Result<Self> {
-        serde_yaml::from_str(s)
-    }
-
-    pub fn to_yaml(&self) -> serde_yaml::Result<String> {
-        serde_yaml::to_string(self)
     }
 }
 

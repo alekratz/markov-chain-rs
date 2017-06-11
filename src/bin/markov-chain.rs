@@ -1,69 +1,168 @@
 #[warn(missing_docs)]
 #[cfg(feature = "generator")] extern crate markov_chain;
+#[cfg(feature = "generator")] extern crate serde;
 #[cfg(feature = "generator")] #[macro_use] extern crate clap;
 #[cfg(feature = "generator")] #[macro_use] extern crate lazy_static;
+#[cfg(feature = "serde_cbor")] extern crate serde_cbor as cbor;
+#[cfg(feature = "serde_yaml")] extern crate serde_yaml as yaml;
 
-#[cfg(feature = "generator")]
-lazy_static! {
-    static ref FILE_EXTENSIONS: Vec<(&'static str, &'static str)> = {
-        let mut extensions = Vec::new();
-        if cfg!(feature = "serde_cbor") {
-            extensions.push(("cbor", "CBOR, Concise Binary Object Representation"));
-        }
-        extensions
-    };
+mod prelude {
+    #![cfg(feature = "generator")]
+    lazy_static! {
+        static ref FILE_EXTENSIONS: Vec<(&'static str, &'static str)> = {
+            let mut extensions = Vec::new();
+            if cfg!(feature = "serde_cbor") {
+                extensions.push(("cbor", "CBOR, Concise Binary Object Representation"));
+            }
+            extensions
+        };
 
-    static ref AVAILABLE_FORMATS: String = {
-        let mut available_formats = String::from(
+        pub static ref AVAILABLE_FORMATS: String = {
+            let mut available_formats = String::from(
 r#"The file format of the chains to train is determined by its file extension.
 These are the file formats and extensions supported:
 
 "#);
-        let max = FILE_EXTENSIONS.iter()
-            .map(|&(x, _)| x.len())
-            .fold(0, |a, b| if a > b { a } else { b }) + 4;
-        for &(ext, desc) in FILE_EXTENSIONS.iter() {
-            available_formats += format!("{1:>0$} - {2}\n", max, format!(".{}", ext), desc).as_str();
+            let max = FILE_EXTENSIONS.iter()
+                .map(|&(x, _)| x.len())
+                .fold(0, |a, b| if a > b { a } else { b }) + 4;
+            for &(ext, desc) in FILE_EXTENSIONS.iter() {
+                available_formats += format!("{1:>0$} - {2}\n", max, format!(".{}", ext), desc).as_str();
+            }
+            available_formats
+        };
+    }
+
+    #[cfg(any(feature = "serde_cbor", feature = "serde_yaml"))]
+    mod serde_strategy {
+        use markov_chain::{Chain, Chainable};
+        use serde::{Serialize, Deserialize};
+        use std::result;
+        use std::io::{self, Read, Write};
+        use std::fs::{File, OpenOptions};
+
+        pub fn read_file(path: &str) -> io::Result<Vec<u8>> {
+            let mut file = File::open(path)?;
+            let mut contents = Vec::new();
+            file.read_to_end(&mut contents)?;
+            Ok(contents)
         }
-        available_formats
-    };
-}
 
-mod deps {
-    #![cfg(feature = "generator")]
+        pub fn write_file(path: &str, bytes: &[u8]) -> io::Result<()> {
+            let mut file = OpenOptions::new().create(true).write(true).open(path)?;
+            file.write_all(bytes)
+        }
 
-    use ::FILE_EXTENSIONS;
+        type Result<T> = result::Result<T, String>;
+
+        pub enum SerdeStrategy {
+            CBOR,
+            Yaml,
+        }
+
+        impl SerdeStrategy {
+            pub fn from_path(path: &str) -> Option<SerdeStrategy> {
+                if cfg!(feature = "serde_cbor") && path.ends_with(".cbor") {
+                    Some(SerdeStrategy::CBOR)
+                }
+                else if cfg!(feature = "serde_yaml") && path.ends_with(".yaml") {
+                    Some(SerdeStrategy::Yaml)
+                }
+                else {
+                    None
+                }
+            }
+
+            pub fn into_vec<T>(self, chain: &Chain<T>) -> Result<Vec<u8>>
+                where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+                use self::SerdeStrategy::*;
+                match self {
+                    CBOR => Self::to_cbor(chain),
+                    Yaml => Self::to_yaml(chain),
+                }
+            }
+
+            pub fn from_slice<T>(self, slice: &[u8]) -> Result<Chain<T>> 
+                where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+                use self::SerdeStrategy::*;
+                match self {
+                    CBOR => Self::from_cbor(slice),
+                    Yaml => Self::from_yaml(slice),
+                }
+            }
+
+            #[cfg(feature = "serde_cbor")]
+            pub fn to_cbor<T>(chain: &Chain<T>) -> Result<Vec<u8>>
+                where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+                use cbor;
+                cbor::to_vec(chain).map_err(|e| e.to_string())
+            }
+
+            #[cfg(feature = "serde_cbor")]
+            pub fn from_cbor<T>(slice: &[u8]) -> Result<Chain<T>>
+                where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+                use cbor;
+                cbor::from_slice(slice).map_err(|e| e.to_string())
+            }
+
+            #[cfg(feature = "serde_yaml")]
+            pub fn to_yaml<T>(chain: &Chain<T>) -> Result<Vec<u8>>
+                where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+                use yaml;
+                yaml::to_string(chain).map(|c| c.into_bytes()).map_err(|e| e.to_string())
+            }
+
+            #[cfg(feature = "serde_yaml")]
+            pub fn from_yaml<T>(slice: &[u8]) -> Result<Chain<T>>
+                where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+                use std::str;
+                use yaml;
+                yaml::from_str(str::from_utf8(slice).unwrap()).map_err(|e| e.to_string())
+            } 
+        }
+
+
+        pub fn write_chain<T>(chain: &Chain<T>, path: &str) -> Result<()>
+            where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+            if let Some(strat) = SerdeStrategy::from_path(path) {
+                let bytes: Vec<u8> = strat.into_vec(chain)?;
+                write_file(path, &bytes).map_err(|e| e.to_string())
+            }
+            else {
+                Err(format!("unknown strategy for writing chain file `{}`", path))
+            }
+        }
+
+        pub fn read_chain<T>(path: &str) -> Result<Chain<T>>
+            where for<'de> T: Chainable + Clone + Serialize + Deserialize<'de> {
+            if let Some(strat) = SerdeStrategy::from_path(path) {
+                let bytes = match read_file(path) {
+                    Ok(b) => b,
+                    Err(e) => return Err(e.to_string())
+                };
+                strat.from_slice(&bytes).map_err(|e| e.to_string())
+            }
+            else {
+                Err(format!("unknown strategy for reading chain file `{}`", path))
+            }
+        }
+    }
+
+    #[cfg(any(feature = "serde_cbor", feature = "serde_yaml"))]
+    use self::serde_strategy::*;
+
+
     use markov_chain::Chain;
-    use std::io::{self, Write, Read};
+    use std::io::{self, Write};
     use std::process;
     use std::fmt::Display;
-    use std::fs::File;
-    use std::fs::OpenOptions;
     use std::path::Path;
 
     macro_rules! exit_err {
         ($fmt:expr, $( $item:expr ),*) => {
             exit_err(format!($fmt, $($item),*));
         };
-    }
-
-    fn read_file(path: &str) -> io::Result<Vec<u8>> {
-        let mut file = File::open(path)?;
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents)?;
-        Ok(contents)
-    }
-
-    fn write_file(path: &str, bytes: &[u8]) -> io::Result<()> {
-        let mut file = OpenOptions::new().create(true).write(true).open(path)?;
-        file.write_all(bytes)
-    }
-
-    pub fn is_valid_extension(ext: &str) -> bool {
-        FILE_EXTENSIONS.iter()
-            .find(|x| x.0 == ext)
-            .is_some()
-    }
+    } 
 
     pub fn train(order: usize, update_files: Vec<&str>, input_files: Vec<&str>) {
         let mut chains = Vec::new();
@@ -75,46 +174,14 @@ mod deps {
             }
         }
 
-        // make sure all chain files have known extensions
-        for update in &update_files {
-            // if someone wants to DRY this loop that'd be great
-            if let Some(extension) = Path::new(update).extension() {
-                if !is_valid_extension(extension.to_str().unwrap()) {
-                    exit_err!("no known strategy to read file `{}`. Known extensions: {}",
-                              update,
-                              FILE_EXTENSIONS.iter().map(|&(a,_)| a).collect::<Vec<&str>>().join(" "));
-                }
-            }
-            else {
-                exit_err!("no known strategy to read file `{}`. Known extensions: {}",
-                          update,
-                          FILE_EXTENSIONS.iter().map(|&(a,_)| a).collect::<Vec<&str>>().join(" "));
-            }
-        }
-
         // convert the update files into chains
         for update in update_files {
             let update_path = Path::new(update);
             if update_path.exists() {
-                println!("Loading {}", update);
-                let contents = match read_file(update) {
+                let chain = match read_chain(update) {
                     Ok(c) => c,
-                    Err(e) => exit_err!("error reading {}: {}", update, e),
+                    Err(e) => exit_err!("{}", e),
                 };
-                // choose chain strategy
-                let chain = if update.ends_with(".cbor") {
-                    match Chain::<String>::from_cbor(&contents) {
-                        Ok(c) => c,
-                        Err(e) => exit_err!("could not read cbor file: {}", e),
-                    }
-                }
-                else {
-                    unreachable!()
-                };
-                if chain.order() != order {
-                    exit_err!("chain file `{}` has a chain with order {}, but {} was specified on the command line",
-                              update, chain.order(), order);
-                }
                 chains.push((update, chain));
             }
             else {
@@ -141,14 +208,9 @@ mod deps {
             }
 
             println!("Writing {}", path);
-            let write_bytes = match Path::new(path).extension().map(|x| x.to_str().unwrap()) {
-                Some("cbor") => chain.to_cbor().unwrap(),
-                _ => unreachable!(),
-            };
-
-            if let Err(e) = write_file(path, &write_bytes) {
+            if let Err(e) = write_chain(&chain, path) {
                 let mut stderr = io::stderr();
-                writeln!(stderr, "Error writing to {}: {}", path, e).unwrap();
+                writeln!(stderr, "could not write {}: {}", path, e).unwrap();
             }
         }
     }
@@ -156,44 +218,20 @@ mod deps {
     pub fn generate(order: usize, paragraphs: usize, sentences: usize, input_files: Vec<&str>) {
         let mut chain = Chain::<String>::new(order);
         for input in input_files {
-            let contents = match read_file(input) {
-                Ok(c) => c,
-                Err(e) => exit_err!("could not read {}: {}", input, e),
-            };
-
-            // train the chain based on the extension
-            if let Some(extension) = Path::new(input).extension().map(|x| x.to_str().unwrap()) {
-                if is_valid_extension(extension) {
-                    match extension {
-                        "cbor" => match Chain::<String>::from_cbor(&contents) {
-                            Ok(c) => if c.order() != order {
-                                exit_err!("could not load chain file {0}: {0} has an order of {1}, while {2} is specified",
-                                          input, c.order(), order);
-                            }
-                            else {
-                                chain.merge(&c);
-                            },
-                            Err(e) => exit_err!("could not parse cbor file {}: {}", input, e),
-                        },
-                        _ => unreachable!(),
-                    }
-                }
-                else {
-                    // TODO : DRY generate(1)
-                    match String::from_utf8(contents) {
-                        Ok(contents) => chain.train_string(&contents),
-                        Err(e) => exit_err!("error reading {} as plaintext: {}", input, e),
-                    };
-                }
+            if SerdeStrategy::from_path(input).is_some() {
+                let input_chain = match read_chain(input) {
+                    Ok(c) => c,
+                    Err(e) => exit_err!("could not read {}: {}", input, e),
+                };
+                chain.merge(&input_chain);
             }
             else {
-                    // TODO : DRY generate(1)
-                match String::from_utf8(contents) {
-                    Ok(contents) => chain.train_string(&contents),
-                    Err(e) => exit_err!("error reading {} as plaintext: {}", input, e),
+                let contents = match read_file(input) {
+                    Ok(c) => String::from_utf8(c).unwrap(),
+                    Err(e) => exit_err!("could not read {}: {}", input, e),
                 };
-            }
-
+                chain.train_string(&contents);
+            };
         }
         let mut pgs = Vec::new();
         // generate paragraphs
@@ -204,60 +242,29 @@ mod deps {
     }
 
     pub fn merge(order: usize, input_files: Vec<&str>, output_file: &str) {
-        let mut chain = Chain::<String>::new(order);
-        if let Some(extension) = Path::new(output_file).extension().map(|x| x.to_str().unwrap()) {
-            if !is_valid_extension(extension) {
-                exit_err!("no known strategy to write file `{}`. Known extensions: {}",
-                          output_file,
-                          FILE_EXTENSIONS.iter().map(|&(a,_)| a).collect::<Vec<&str>>().join(" "));
-            }
+        if SerdeStrategy::from_path(output_file).is_none() {
+            exit_err!("unknown strategy for writing {}", output_file);
         }
-        for input in input_files {
-            let contents = match read_file(input) {
-                Ok(c) => c,
-                Err(e) => exit_err!("could not read {}: {}", input, e),
-            };
 
-            // train the chain based on the extension
-            if let Some(extension) = Path::new(input).extension().map(|x| x.to_str().unwrap()) {
-                if is_valid_extension(extension) {
-                    match extension {
-                        "cbor" => match Chain::<String>::from_cbor(&contents) {
-                            Ok(c) => if c.order() != order {
-                                exit_err!("could not load chain file {0}: {0} has an order of {1}, while {2} is specified",
-                                          input, c.order(), order);
-                            }
-                            else {
-                                chain.merge(&c);
-                            },
-                            Err(e) => exit_err!("could not parse cbor file {}: {}", input, e),
-                        },
-                        _ => unreachable!(),
-                    }
-                }
-                else {
-                    // TODO : DRY generate(1)
-                    match String::from_utf8(contents) {
-                        Ok(contents) => chain.train_string(&contents),
-                        Err(e) => exit_err!("error reading {} as plaintext: {}", input, e),
-                    };
-                }
+        let mut chain = Chain::<String>::new(order);
+        for input in input_files {
+            if SerdeStrategy::from_path(input).is_some() {
+                let input_chain = match read_chain(input) {
+                    Ok(c) => c,
+                    Err(e) => exit_err!("could not read {}: {}", input, e),
+                };
+                chain.merge(&input_chain);
             }
             else {
-                // TODO : DRY generate(1)
-                match String::from_utf8(contents) {
-                    Ok(contents) => chain.train_string(&contents),
-                    Err(e) => exit_err!("error reading {} as plaintext: {}", input, e),
+                let contents = match read_file(input) {
+                    Ok(c) => String::from_utf8(c).unwrap(),
+                    Err(e) => exit_err!("could not read {}: {}", input, e),
                 };
-            }
+                chain.train_string(&contents);
+            };
         }
         
-        let write_bytes = match Path::new(output_file).extension().map(|x| x.to_str().unwrap()).unwrap() {
-            "cbor" => chain.to_cbor().unwrap(),
-            _ => unreachable!(),
-        };
-
-        if let Err(e) = write_file(output_file, &write_bytes) {
+        if let Err(e) = write_chain(&chain, output_file) {
             exit_err!("could not write file {}: {}", output_file, e);
         }
     }
@@ -270,7 +277,7 @@ mod deps {
 }
 
 #[cfg(feature = "generator")]
-use deps::*;
+use prelude::*;
 
 #[cfg(feature = "generator")]
 fn main() {
