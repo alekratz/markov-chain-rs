@@ -1,6 +1,10 @@
 # markov-chain
 A markov chain library for Rust.
 
+# [Documentation](https://docs.rs/markov-chain/0.1.0/markov_chain/)
+
+# [Crates.io](https://crates.io/crates/markov-chain)
+
 # Features
 * Training sequences of arbitrary types
 * Nodes of N order

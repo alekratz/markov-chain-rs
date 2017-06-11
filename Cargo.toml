@@ -8,6 +8,7 @@ exclude = [
     "texts/*"
 ]
 repository = "https://github.com/alekratz/markov-chain-rs"
+documentation = "https://docs.rs/markov-chain/0.1.0/markov_chain/"
 
 [dependencies]
 serde = "1.0"
