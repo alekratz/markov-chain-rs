@@ -14,6 +14,14 @@ A markov chain library for Rust.
 * Implementations of serde file writing in a utility module
 * Finished documentation complete with examples
 
+# Building
+By default, the library does not build the full `markov-util` binary. To include
+the binary in the build, add the flags `--features "generator serde_cbor
+serde_yaml"` to `cargo build` to generate the binary. Additionally, if you do
+not want to compile with CBOR or YAML support, you can remove whichever you
+want to omit. **Also note that at least one serde_\* library is required to build
+markov-util.**
+
 # Basic usage
 In your Cargo.toml file, make sure you have the line `markov_chain = "0.1"`
 under the `[dependencies]` section.

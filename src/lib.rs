@@ -1,3 +1,36 @@
+//! A markov chain library for Rust.
+//! 
+//! # Features
+//! * Training sequences of arbitrary types
+//! * Nodes of N order
+//! * Specialized string generation and training
+//! * Serialization via serde
+//! * Generation utility
+//! 
+//! # Examples
+//! In your Cargo.toml file, make sure you have the line `markov_chain = "0.1"`
+//! under the `[dependencies]` section.
+//! 
+//! Markov chains may be created with any type that implements `Clone`, `Hash`,
+//! and `Eq`, and with some order (which is the number of items per node on the
+//! markov chain).
+//! 
+//! ## Creating a basic chain
+//!
+//! ```
+//! use markov_chain::Chain;
+//! 
+//! let mut chain = Chain::new(1); // 1 is the order of the chain
+//! 
+//! // Train the chain on some vectors
+//! chain.train(vec![1, 2, 3, 2, 1, 2, 3, 4, 3, 2, 1])
+//!     .train(vec![5, 4, 3, 2, 1]);
+//! 
+//! // Generate a sequence and print it out
+//! let sequence = chain.generate();
+//! println!("{:?} ", sequence);
+//! ```
+#![warn(missing_docs)]
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -26,11 +59,11 @@ type Link<T> = HashMap<Option<T>, u32>;
 
 // don't add where T: Serialize + DeserializeOwned, see
 // https://github.com/serde-rs/serde/issues/890
-/// A markov chain. A markov chain has an order, which determines how many items
+/// A struct representing a markov chain.
+///
+/// A markov chain has an order, which determines how many items
 /// per node are held. The chain itself is a map of vectors, which point to
 /// a map of single elements pointing at a weight.
-/// # Examples
-/// Creating a basic chain
 ///
 /// ```
 /// use markov_chain::Chain;
@@ -39,14 +72,11 @@ type Link<T> = HashMap<Option<T>, u32>;
 /// 
 /// // Train the chain on some vectors
 /// chain.train(vec![1, 2, 3, 2, 1, 2, 3, 4, 3, 2, 1])
-/// .train(vec![5, 4, 3, 2, 1]);
+///     .train(vec![5, 4, 3, 2, 1]);
 /// 
 /// // Generate a sequence and print it out
 /// let sequence = chain.generate();
-/// for number in sequence {
-/// print!("{} ", number);
-/// }
-/// println!("");
+/// println!("{:?} ", sequence);
 /// ```
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Chain<T> where T: Clone + Chainable {
@@ -55,7 +85,6 @@ pub struct Chain<T> where T: Clone + Chainable {
 }
 
 impl<T> Chain<T> where T: Clone + Chainable {
-#![warn(missing_docs)]
     /// Initializes a new markov chain with a given order.
     /// # Examples
     /// ```
@@ -287,6 +316,9 @@ impl Chain<String> {
         self
     }
 
+    /// Generates a sentence, which are ended by "break" strings or null links.
+    /// "Break" strings are:
+    /// `.`, `?`, `!`, `."`, `!"`, `?"`, `,"`
     pub fn generate_sentence(&self) -> String {
         // TODO : DRY generate_sentence(1)
         // consider an iterator?
@@ -317,6 +349,8 @@ impl Chain<String> {
         result
     }
 
+    /// Generates a paragraph of N sentences. Each sentence is broken off by N
+    /// spaces.
     pub fn generate_paragraph(&self, sentences: usize) -> String {
         let mut paragraph = Vec::new();
         for _ in 0 .. sentences {
