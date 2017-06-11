@@ -1,3 +1,4 @@
+#[warn(missing_docs)]
 #[cfg(feature = "generator")] extern crate markov_chain;
 #[cfg(feature = "generator")] #[macro_use] extern crate clap;
 #[cfg(feature = "generator")] #[macro_use] extern crate lazy_static;

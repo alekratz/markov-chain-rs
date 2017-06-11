@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 // Stolen from public domain project https://github.com/aatxe/markov
+/// A trait that defines a restrictions required for chainable items.
 pub trait Chainable: Eq + Hash {}
 impl<T> Chainable for T where T: Eq + Hash {}
 
@@ -42,6 +43,13 @@ pub struct Chain<T> where T: Clone + Chainable {
 }
 
 impl<T> Chain<T> where T: Clone + Chainable {
+#![warn(missing_docs)]
+    /// Initializes a new markov chain with a given order.
+    /// # Examples
+    /// ```
+    /// use markov_chain::Chain;
+    /// let chain: Chain<u32> = Chain::new(1);
+    /// ```
     pub fn new(order: usize) -> Self {
         Chain {
             chain: HashMap::new(),
@@ -49,11 +57,20 @@ impl<T> Chain<T> where T: Clone + Chainable {
         }
     } 
 
+    /// Gets the order of the markov chain. This is static from chain to chain.
     pub fn order(&self) -> usize {
         self.order
     }
 
     /// Trains a sentence on a string of items.
+    /// # Examples
+    /// ```
+    /// use markov_chain::Chain;
+    /// let mut chain = Chain::new(1);
+    /// let data = vec![10, 15, 20];
+    /// chain.train(data)
+    ///     .train(vec![]);
+    /// ```
     pub fn train(&mut self, string: Vec<T>) -> &mut Self {
         if string.is_empty() {
             return self;
@@ -88,6 +105,15 @@ impl<T> Chain<T> where T: Clone + Chainable {
     }
 
     /// Merges this markov chain with another.
+    /// # Examples
+    /// ```
+    /// use markov_chain::Chain;
+    /// let mut chain1 = Chain::new(1);
+    /// let mut chain2 = chain1.clone();
+    /// chain1.train(vec![1, 2, 3]);
+    /// chain2.train(vec![2, 3, 4, 5, 6])
+    ///     .merge(&chain1);
+    /// ```
     pub fn merge(&mut self, other: &Self) -> &mut Self {
         assert_eq!(self.order, other.order, "orders must be equal in order to merge markov chains");
         if self.chain.is_empty() {
@@ -134,13 +160,13 @@ impl<T> Chain<T> where T: Clone + Chainable {
     /// Generates a string of items with no maximum limit.
     /// This is equivalent to `generate_limit(-1)`.
     pub fn generate(&self) -> Vec<T> {
-        // TODO : DRY generate_sentence(1)
         self.generate_limit(-1)
     }
 
     /// Generates a string of items, based on the training, of up to N items.
     /// Specifying a maximum of -1 allows any arbitrary size of list.
     pub fn generate_limit(&self, max: isize) -> Vec<T> {
+        // TODO : DRY generate_sentence(1)
         if self.chain.is_empty() {
             return vec![];
         }
@@ -228,7 +254,6 @@ impl<T> Chain<T> where T: Clone + Chainable + Serialize + DeserializeOwned {
 }
 
 // YAML is broken https://github.com/chyh1990/yaml-rust/issues/70
-/*
 #[cfg(feature = "serde_yaml")]
 impl<T> Chain<T> where T: Clone + Chainable + Serialize + DeserializeOwned {
     pub fn from_yaml(s: &str) -> serde_yaml::Result<Self> {
@@ -239,7 +264,7 @@ impl<T> Chain<T> where T: Clone + Chainable + Serialize + DeserializeOwned {
         serde_yaml::to_string(self)
     }
 }
-*/
+
 lazy_static! { 
     /// Symbol combinations to break sentences on.
     static ref BREAK: [&'static str; 7] = [".", "?", "!", ".\"", "!\"", "?\"", ",\""];
