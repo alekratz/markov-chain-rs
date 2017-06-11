@@ -36,7 +36,7 @@ chain.train(vec![1, 2, 3, 2, 1, 2, 3, 4, 3, 2, 1])
 // Generate a sequence and print it out
 let sequence = chain.generate();
 for number in sequence {
-    print!("{} ", number");
+    print!("{} ", number);
 }
 println!("");
 ```
