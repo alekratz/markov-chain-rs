@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Alek Ratzloff <alekratz@gmail.com>"]
 description = "A generic markov chain library."
 license = "ISC"
+exclude = [
+    "texts/*"
+]
+repository = "https://github.com/alekratz/markov-chain-rs"
 
 [dependencies]
 serde = "1.0"
