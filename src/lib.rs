@@ -29,6 +29,25 @@ type Link<T> = HashMap<Option<T>, u32>;
 /// A markov chain. A markov chain has an order, which determines how many items
 /// per node are held. The chain itself is a map of vectors, which point to
 /// a map of single elements pointing at a weight.
+/// # Examples
+/// Creating a basic chain
+///
+/// ```
+/// use markov_chain::Chain;
+/// 
+/// let mut chain = Chain::new(1); // 1 is the order of the chain
+/// 
+/// // Train the chain on some vectors
+/// chain.train(vec![1, 2, 3, 2, 1, 2, 3, 4, 3, 2, 1])
+/// .train(vec![5, 4, 3, 2, 1]);
+/// 
+/// // Generate a sequence and print it out
+/// let sequence = chain.generate();
+/// for number in sequence {
+/// print!("{} ", number);
+/// }
+/// println!("");
+/// ```
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Chain<T> where T: Clone + Chainable {
     chain: HashMap<Node<T>, Link<T>>,
