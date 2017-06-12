@@ -103,6 +103,16 @@ impl<T> Chain<T> where T: Clone + Chainable {
         self.order
     }
 
+    /// Gets whether the internal markov chain is empty.
+    pub fn is_empty(&self) -> bool {
+        self.chain.is_empty()
+    }
+
+    /// Gets the raw underlying chain data structure.
+    pub fn chain(&self) -> &HashMap<Node<T>, Link<T>> {
+        &self.chain
+    }
+
     /// Trains a sentence on a string of items.
     /// # Examples
     /// ```
