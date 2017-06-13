@@ -323,8 +323,6 @@ impl Chain<String> {
             }
             parts
         };
-        println!("sentence: {}", sentence);
-        println!("training on {:?}", parts);
         for string in parts {
             self.train(string);
         }
