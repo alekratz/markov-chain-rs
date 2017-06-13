@@ -318,8 +318,13 @@ impl Chain<String> {
                     words.clear();
                 }
             }
+            if !words.is_empty() {
+                parts.push(words);
+            }
             parts
         };
+        println!("sentence: {}", sentence);
+        println!("training on {:?}", parts);
         for string in parts {
             self.train(string);
         }
