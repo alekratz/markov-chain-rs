@@ -413,5 +413,5 @@ fn main() {
 
 #[cfg(not(feature = "generator"))]
 fn main() {
-    println!("build with --feature \"clap\" to run the markov chain generator");
+    println!("build with --feature \"generator\" to run the markov chain generator");
 }
